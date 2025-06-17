@@ -14,14 +14,12 @@ panic_responses = [
     "🧠 PANIC MODE ACTIVATED... ¯\\_(ツ)_/¯"
 ]
 
-# ✅ Generator — infinite panic response loop
 def panic_generator():
     i = 0
     while True:
         yield panic_responses[i % len(panic_responses)]
         i += 1
 
-# ✅ Timeout consumer — send panic messages for N seconds
 async def iterate_with_timeout(callback_or_message, timeout_seconds=3, is_callback=False):
     gen = panic_generator()
     start = datetime.now()
@@ -33,10 +31,8 @@ async def iterate_with_timeout(callback_or_message, timeout_seconds=3, is_callba
             await callback_or_message.answer(text)
         await asyncio.sleep(0.5)  # simulate delay
 
-# 🧨 Panic command
 async def panic_command(message: Message):
     await iterate_with_timeout(message, timeout_seconds=3, is_callback=False)
-
 
 async def panic_button(callback: CallbackQuery):
     await iterate_with_timeout(callback, timeout_seconds=3, is_callback=True)
