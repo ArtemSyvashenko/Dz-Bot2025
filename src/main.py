@@ -9,6 +9,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import CallbackQuery
 from config import TOKEN, SUBJECTS
 from task1 import panic_command, panic_button
+from config import TOKEN, CHAT_ID
+
 
 router.message.register(panic_command, F.text == "паніка")
 router.callback_query.register(panic_button, F.data == "паніка")
