@@ -1,0 +1,16 @@
+# ⚠️ Конфіденційні файли
+config.py
+.env
+
+# 🧹 Кеш
+__pycache__/
+*.pyc
+
+# 🛠 IDE-шне сміття
+.vscode/
+.idea/
+
+# 🔐 Лог-файли і токени
+*.log
+ai_prompts_log.json
+data/*.json
