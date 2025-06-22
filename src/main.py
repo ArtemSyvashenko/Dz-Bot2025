@@ -1,65 +1,66 @@
-import os
 import json
+import os
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.enums import ParseMode
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery
-
-from config import TOKEN, SUBJECTS
-from task1 import panic_command, panic_button
-#from task3 import async_memoize
-from task8 import button_agent_mode, receive_prompt, AgentState, enter_ageent_mode
-from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.context import FSMContext
+from config import SUBJECTS  # <- Використовуємо SUBJECTS з config
+from agent import button_agent_mode, receive_prompt, enter_ageent_mode, AgentState
 
-bot = Bot(
-    token=TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-)
+TOKEN = os.getenv("BOT_TOKEN", "your_bot_token_here")
+bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# === Збереження та зчитування ДЗ ===
+click_counter = {}  # user_id: count
+
+class EventEmitter:
+    def __init__(self):
+        self.listeners = []
+
+    def subscribe(self, listener):
+        self.listeners.append(listener)
+
+    def emit(self, data):
+        for fn in self.listeners:
+            fn(data)
+
+def panic_handler(data):
+    print("⚠️ Паніка! Користувач натиснув 'ДЗ' 5 разів!", data)
+
+panic_events = EventEmitter()
+panic_events.subscribe(panic_handler)
+
 def get_subject_data(subject):
     path = os.path.join(DATA_DIR, f"{subject}.json")
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {"main": None, "adds": [], "done": False, "chat_id": None}
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 def save_subject_data(subject, data):
     path = os.path.join(DATA_DIR, f"{subject}.json")
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# === Команди ===
-@dp.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📚 ДЗ", callback_data="menu_homework")
-    builder.button(text="📦 Всі ДЗ", callback_data="menu_all_hw")
-    builder.button(text="🤖 AI Агент", callback_data="menu_ai")
-    builder.button(text="📛 Паніка", callback_data="паніка")
-    builder.adjust(2)
-    await message.answer("Привіт! Обери дію:", reply_markup=builder.as_markup())
+@dp.message(F.text.lower() == "/start")
+async def start_handler(msg: types.Message):
+    keyboard = InlineKeyboardBuilder()
+    keyboard.button(text="📚 ДЗ", callback_data="menu_homework")
+    await msg.answer("Привіт! Обери дію:", reply_markup=keyboard.as_markup())
 
-@dp.callback_query(lambda c: c.data == "паніка")
-async def handle_panic(callback: CallbackQuery):
-    await panic_button(callback)
-
-@dp.message(F.text == "паніка")
-async def handle_panic_text(message: types.Message):
-    await panic_command(message)
-
-# === ДЗ за предметами ===
 @dp.callback_query(lambda call: call.data == "menu_homework")
 async def show_subjects(call: types.CallbackQuery):
+    user_id = call.from_user.id
+    click_counter[user_id] = click_counter.get(user_id, 0) + 1
+
+    if click_counter[user_id] == 5:
+        panic_events.emit({"user_id": user_id, "chat_id": call.message.chat.id})
+
     builder = InlineKeyboardBuilder()
     for tag, name in SUBJECTS.items():
         builder.button(text=name, callback_data=f"user_subject:{tag}")
@@ -93,25 +94,26 @@ async def show_homework(call: CallbackQuery):
     builder.adjust(2)
     await call.message.answer("Статус ДЗ:", reply_markup=builder.as_markup())
 
-@dp.callback_query(lambda call: call.data.startswith("mark_done:"))
-async def mark_done(call: types.CallbackQuery):
-    subject = call.data.split(":")[1]
+@dp.callback_query(lambda c: c.data.startswith("mark_done:"))
+async def mark_done(callback: CallbackQuery):
+    subject = callback.data.split(":")[1]
     data = get_subject_data(subject)
     data["done"] = True
     save_subject_data(subject, data)
-    await call.answer("Позначено як виконане ✅")
+    await callback.message.answer("✅ Позначено як виконане.")
+    await callback.answer()
 
-@dp.callback_query(lambda call: call.data.startswith("undo_done:"))
-async def undo_done(call: types.CallbackQuery):
-    subject = call.data.split(":")[1]
+@dp.callback_query(lambda c: c.data.startswith("undo_done:"))
+async def undo_done(callback: CallbackQuery):
+    subject = callback.data.split(":")[1]
     data = get_subject_data(subject)
     data["done"] = False
     save_subject_data(subject, data)
-    await call.answer("Повернено як невиконане 🔁")
+    await callback.message.answer("↩️ Позначено як невиконане.")
+    await callback.answer()
 
-# === Обробка тегів у повідомленнях ===
 @dp.message()
-async def handle_tags(message: types.Message):
+async def global_check(message: types.Message):
     text = message.text or message.caption
     if not text:
         return
@@ -121,32 +123,53 @@ async def handle_tags(message: types.Message):
             tag = word[1:]
             is_add = tag.endswith("+")
             subject = tag.rstrip("+")
+
             if subject not in SUBJECTS:
                 return
+
             content = text.replace(word, "").strip()
             if not content and not message.photo and not message.document:
                 await message.reply("⚠️ Повідомлення не містить ДЗ.")
                 return
+
             data = get_subject_data(subject)
+
             if is_add:
                 data.setdefault("adds", []).append(message.message_id)
             else:
+                if data.get("main"):
+                    data.setdefault("history", []).append({
+                        "main": data["main"],
+                        "adds": data.get("adds", []),
+                        "done": data.get("done", False)
+                    })
                 data["main"] = message.message_id
                 data["adds"] = []
                 data["done"] = False
+
             data["chat_id"] = message.chat.id
             save_subject_data(subject, data)
             await message.reply("✅ Збережено.")
             return
 
-# === Task 5: Показати всі ДЗ одразу ===
+async def async_filter(items, predicate):
+    result = []
+    for item in items:
+        if await predicate(item):
+            result.append(item)
+    return result
+
 @dp.callback_query(lambda c: c.data == "menu_all_hw")
 async def show_all_homework(callback: CallbackQuery):
-    count = 0
-    for subject in SUBJECTS:
+    async def has_unfinished_homework(subject):
         data = get_subject_data(subject)
-        if data.get("done"):
-            continue
+        return not data.get("done")
+
+    subjects = await async_filter(SUBJECTS, has_unfinished_homework)
+
+    count = 0
+    for subject in subjects:
+        data = get_subject_data(subject)
         main = data.get("main")
         chat_id = data.get("chat_id")
         if main and chat_id:
@@ -157,6 +180,7 @@ async def show_all_homework(callback: CallbackQuery):
                 count += 1
             except:
                 continue
+
     if count == 0:
         await callback.message.answer("😴 Немає невиконаних ДЗ.")
     else:
@@ -168,7 +192,6 @@ dp.callback_query.register(button_agent_mode, F.data == "menu_ai")
 dp.message.register(receive_prompt, AgentState.waiting_for_prompt)
 dp.message.register(enter_ageent_mode, F.text == "/ai")
 
-# === Запуск ===
 async def main():
     await dp.start_polling(bot)
 

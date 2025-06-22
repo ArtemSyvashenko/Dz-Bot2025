@@ -1,6 +1,27 @@
 {
-  "main": 125,
+  "main": 149,
   "adds": [],
-  "done": true,
-  "chat_id": -1002389750275
+  "done": false,
+  "chat_id": -1002389750275,
+  "history": [
+    {
+      "main": 139,
+      "adds": [],
+      "done": false
+    },
+    {
+      "main": 141,
+      "adds": [
+        143
+      ],
+      "done": false
+    },
+    {
+      "main": 145,
+      "adds": [
+        147
+      ],
+      "done": false
+    }
+  ]
 }
