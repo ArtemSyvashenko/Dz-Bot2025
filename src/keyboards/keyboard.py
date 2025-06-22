@@ -1,11 +1,15 @@
-from aiogram.types import ReplyKeybpardMarkup, Keyboardbutton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-main_menu = ReplyKeybpardMarkup(
+main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [Keyboardbutton(text="📚 ДЗ")], Keyboardbutton(text="⚙️ Налаштування")
-        [Keyboardbutton(text="🤖 AI агент")]
-        [KeyboardButton(text="🧠 Паніка")]
+        [
+            KeyboardButton(text="Паніка"),
+            KeyboardButton(text="AI Асистент")
+        ],
+        [
+            KeyboardButton(text="ДЗ"),
+        ]
     ],
-    resize_keyboard=True
-
+    resize_keyboard=True,
+    input_field_placeholder="Оберіть дію:"
 )

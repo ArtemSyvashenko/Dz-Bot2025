@@ -2,7 +2,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext 
-from keyboards.keyboard import main_menu
+#from keyboards.keyboard import main_menu
 import json
 from datetime import datetime
 
