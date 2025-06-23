@@ -6,10 +6,10 @@ from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.context import FSMContext
-from config import SUBJECTS  # <- Використовуємо SUBJECTS з config
+from config import SUBJECTS 
+from config import TOKEN
 from agent import button_agent_mode, receive_prompt, enter_ageent_mode, AgentState
 
-TOKEN = os.getenv("BOT_TOKEN", "your_bot_token_here")
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
@@ -51,6 +51,9 @@ def save_subject_data(subject, data):
 async def start_handler(msg: types.Message):
     keyboard = InlineKeyboardBuilder()
     keyboard.button(text="📚 ДЗ", callback_data="menu_homework")
+    keyboard.button(text="🧠 AI-агент", callback_data="menu_ai")
+    keyboard.button(text="🔥 Популярне ДЗ", callback_data="menu_popular_hw")
+    keyboard.button(text="📌 Невиконане ДЗ", callback_data="menu_unfinished_hw")
     await msg.answer("Привіт! Обери дію:", reply_markup=keyboard.as_markup())
 
 @dp.callback_query(lambda call: call.data == "menu_homework")
@@ -159,17 +162,46 @@ async def async_filter(items, predicate):
             result.append(item)
     return result
 
-@dp.callback_query(lambda c: c.data == "menu_all_hw")
-async def show_all_homework(callback: CallbackQuery):
-    async def has_unfinished_homework(subject):
-        data = get_subject_data(subject)
-        return not data.get("done")
-
-    subjects = await async_filter(SUBJECTS, has_unfinished_homework)
+@dp.callback_query(lambda c: c.data == "menu_popular_hw")
+async def show_popular_homework(callback: CallbackQuery):
+    # Відсортувати предмети за популярністю
+    sorted_subjects = sorted(
+        SUBJECTS.keys(),
+        key=lambda sub: click_counter.get(sub, 0),
+        reverse=True
+    )
 
     count = 0
-    for subject in subjects:
+    for subject in sorted_subjects:
         data = get_subject_data(subject)
+        if data.get("done"):
+            continue
+        main = data.get("main")
+        chat_id = data.get("chat_id")
+        if main and chat_id:
+            try:
+                await bot.forward_message(callback.message.chat.id, chat_id, main)
+                for add in data.get("adds", []):
+                    await bot.forward_message(callback.message.chat.id, chat_id, add)
+                count += 1
+                if count >= 3:  # показати тільки топ-3
+                    break
+            except:
+                continue
+
+    if count == 0:
+        await callback.message.answer("🚫 Немає популярних невиконаних ДЗ.")
+    else:
+        await callback.message.answer(f"🔥 Показано {count} найчастіше переглянутих ДЗ.")
+    await callback.answer()
+
+@dp.callback_query(lambda c: c.data == "menu_unfinished_hw")
+async def show_unfinished_homework(callback: CallbackQuery):
+    count = 0
+    for subject in SUBJECTS:
+        data = get_subject_data(subject)
+        if data.get("done"):
+            continue
         main = data.get("main")
         chat_id = data.get("chat_id")
         if main and chat_id:
@@ -184,10 +216,10 @@ async def show_all_homework(callback: CallbackQuery):
     if count == 0:
         await callback.message.answer("😴 Немає невиконаних ДЗ.")
     else:
-        await callback.message.answer(f"📦 Показано {count} предмет(ів) із ДЗ.")
+        await callback.message.answer(f"📦 Показано {count} невиконаних предмет(ів).")
     await callback.answer()
 
-# === Task 8: AI Агент ===
+
 dp.callback_query.register(button_agent_mode, F.data == "menu_ai")
 dp.message.register(receive_prompt, AgentState.waiting_for_prompt)
 dp.message.register(enter_ageent_mode, F.text == "/ai")
