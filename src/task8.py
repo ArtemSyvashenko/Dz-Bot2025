@@ -1,5 +1,5 @@
-import requests
 import time
+import requests 
 from datetime import datetime
 
 class AuthProxy:
