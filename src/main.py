@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from config import SUBJECTS 
 from config import TOKEN
 from agent import button_agent_mode, receive_prompt, enter_ageent_mode, AgentState
+from task1 import panic_button
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -54,7 +55,12 @@ async def start_handler(msg: types.Message):
     keyboard.button(text="🧠 AI-агент", callback_data="menu_ai")
     keyboard.button(text="🔥 Популярне ДЗ", callback_data="menu_popular_hw")
     keyboard.button(text="📌 Невиконане ДЗ", callback_data="menu_unfinished_hw")
+    keyboard.button(text="😱 Паніка", callback_data="menu_panic")
     await msg.answer("Привіт! Обери дію:", reply_markup=keyboard.as_markup())
+
+@dp.callback_query(lambda c: c.data == "menu_panic")
+async def call_panic(callback: CallbackQuery):
+    await panic_button(callback)
 
 @dp.callback_query(lambda call: call.data == "menu_homework")
 async def show_subjects(call: types.CallbackQuery):
@@ -73,6 +79,7 @@ async def show_subjects(call: types.CallbackQuery):
 @dp.callback_query(lambda call: call.data.startswith("user_subject:"))
 async def show_homework(call: CallbackQuery):
     subject = call.data.split(":")[1]
+    click_counter[subject] = click_counter.get(subject, 0) + 1
     data = get_subject_data(subject)
     if not data or data.get("done"):
         await call.answer("Немає активного ДЗ або воно вже виконане.")
@@ -162,38 +169,26 @@ async def async_filter(items, predicate):
             result.append(item)
     return result
 
-@dp.callback_query(lambda c: c.data == "menu_popular_hw")
-async def show_popular_homework(callback: CallbackQuery):
-    # Відсортувати предмети за популярністю
-    sorted_subjects = sorted(
-        SUBJECTS.keys(),
-        key=lambda sub: click_counter.get(sub, 0),
-        reverse=True
-    )
-
-    count = 0
-    for subject in sorted_subjects:
-        data = get_subject_data(subject)
-        if data.get("done"):
-            continue
-        main = data.get("main")
+@dp.callback_query(lambda c: c.data == "menu_popular")
+async def show_popular_subjects(callback: CallbackQuery):
+    sorted_subjects = sorted(click_counter.items(), key=lambda x: x[1], reverse=True)[:3]
+    
+    for subject_tag, _ in sorted_subjects:
+        data = get_subject_data(subject_tag)
         chat_id = data.get("chat_id")
+        main = data.get("main")
+        
         if main and chat_id:
             try:
                 await bot.forward_message(callback.message.chat.id, chat_id, main)
-                for add in data.get("adds", []):
-                    await bot.forward_message(callback.message.chat.id, chat_id, add)
-                count += 1
-                if count >= 3:  # показати тільки топ-3
-                    break
+                for msg_id in data.get("adds", []):
+                    await bot.forward_message(callback.message.chat.id, chat_id, msg_id)
             except:
                 continue
 
-    if count == 0:
-        await callback.message.answer("🚫 Немає популярних невиконаних ДЗ.")
-    else:
-        await callback.message.answer(f"🔥 Показано {count} найчастіше переглянутих ДЗ.")
+    await callback.message.answer("🔝 Це найпопулярніші предмети!")
     await callback.answer()
+
 
 @dp.callback_query(lambda c: c.data == "menu_unfinished_hw")
 async def show_unfinished_homework(callback: CallbackQuery):
@@ -218,7 +213,6 @@ async def show_unfinished_homework(callback: CallbackQuery):
     else:
         await callback.message.answer(f"📦 Показано {count} невиконаних предмет(ів).")
     await callback.answer()
-
 
 dp.callback_query.register(button_agent_mode, F.data == "menu_ai")
 dp.message.register(receive_prompt, AgentState.waiting_for_prompt)

@@ -1,6 +1,9 @@
 {
   "main": 156,
-  "adds": [],
+  "adds": [
+    160,
+    162
+  ],
   "done": false,
   "chat_id": -1002389750275,
   "history": [
